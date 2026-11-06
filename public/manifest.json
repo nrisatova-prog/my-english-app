@@ -1,0 +1,23 @@
+{
+  "name": "My English — Учим английский",
+  "short_name": "My English",
+  "description": "Учим английский от A1 до C2",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#eff6ff",
+  "theme_color": "#1d4ed8",
+  "lang": "ru",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
