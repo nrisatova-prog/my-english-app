@@ -1,7 +1,8 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
 const lessons = [
   [
     { en: "Travel", ru: "Путешествовать", example: "I love to travel." },
@@ -1662,8 +1663,17 @@ const nav: { id: Tab; title: string; emoji: string }[] = [
   {id:"writing",title:"Письменный тест",emoji:"✍️"}, {id:"progress",title:"Календарь и XP",emoji:"🏆"},
   {id:"stats",title:"Статистика",emoji:"📊"},
 ];
+function subscribeToSection(onChange: () => void) {
+  window.addEventListener("hashchange", onChange);
+  return () => window.removeEventListener("hashchange", onChange);
+}
+
+function getSection(): Tab {
+  return nav.find((item) => `#${item.id}` === window.location.hash)?.id ?? "today";
+}
+
 export default function Home() {
-  const [tab,setTab] = useState<Tab>("today");
+  const tab = useSyncExternalStore(subscribeToSection, getSection, () => "today" as const);
   const [sceneIndex,setSceneIndex]=useState(0);
   const [sceneAnswer,setSceneAnswer]=useState("");
   const [sceneChecked,setSceneChecked]=useState(false);
@@ -1692,12 +1702,17 @@ export default function Home() {
   const [month,setMonth] = useState(10);
   const [year,setYear] = useState(2026);
   useEffect(() => {
-    const now = new Date();
-    setClock(now);
-    setMonth(now.getMonth());
-    setYear(now.getFullYear());
+    const initializeCalendar = window.setTimeout(() => {
+      const now = new Date();
+      setClock(now);
+      setMonth(now.getMonth());
+      setYear(now.getFullYear());
+    }, 0);
     const timer = window.setInterval(() => setClock(new Date()), 60_000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(initializeCalendar);
+      window.clearInterval(timer);
+    };
   }, []);
   const todayKey=dateKey(clock);
   const todayData=store[todayKey] ?? {checked:[],learned:[],tests:0,xp:0};
@@ -1711,15 +1726,18 @@ export default function Home() {
   const primary="rounded-xl bg-blue-600 px-4 py-2.5 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-40";
   const secondary="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 font-semibold text-blue-800 hover:bg-blue-100";
   useEffect(()=>{
-    try {
-      const old=localStorage.getItem("myEnglishDashboardV2");
-      if(old){const parsed=JSON.parse(old); if(parsed && typeof parsed==="object")setStore(parsed);}
-      const h=localStorage.getItem("myEnglishDashboardHistoryV2");
-      if(h){const parsed=JSON.parse(h);if(Array.isArray(parsed))setHistory(parsed);}
-      // Сохраняем старую историю письменных тестов, если она уже была.
-      if(!h){const oldHistory=localStorage.getItem("myEnglishWritingHistory");if(oldHistory){const parsed=JSON.parse(oldHistory);if(Array.isArray(parsed))setHistory(parsed.map((r:{date:string;correct:number;total:number})=>({...r,kind:"Письменный тест"})));}}
-    } catch(e){console.error("Не удалось загрузить прогресс",e);}
-    setReady(true);
+    const restore = window.setTimeout(() => {
+      try {
+        const old=localStorage.getItem("myEnglishDashboardV2");
+        if(old){const parsed=JSON.parse(old); if(parsed && typeof parsed==="object")setStore(parsed);}
+        const h=localStorage.getItem("myEnglishDashboardHistoryV2");
+        if(h){const parsed=JSON.parse(h);if(Array.isArray(parsed))setHistory(parsed);}
+        // Сохраняем старую историю письменных тестов, если она уже была.
+        if(!h){const oldHistory=localStorage.getItem("myEnglishWritingHistory");if(oldHistory){const parsed=JSON.parse(oldHistory);if(Array.isArray(parsed))setHistory(parsed.map((r:{date:string;correct:number;total:number})=>({...r,kind:"Письменный тест"})));}}
+      } catch(e){console.error("Не удалось загрузить прогресс",e);}
+      setReady(true);
+    }, 0);
+    return () => window.clearTimeout(restore);
   },[]);
   useEffect(()=>{if(ready)localStorage.setItem("myEnglishDashboardV2",JSON.stringify(store));},[store,ready]);
   useEffect(()=>{if(ready)localStorage.setItem("myEnglishDashboardHistoryV2",JSON.stringify(history));},[history,ready]);
@@ -1735,10 +1753,21 @@ export default function Home() {
       <header className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-r from-blue-800 to-sky-500 px-6 py-6 text-white shadow-lg">
         <div><div className="text-sm font-semibold text-blue-100">Твой английский каждый день</div><h1 className="mt-1 text-3xl font-black">💙 My English</h1><p className="mt-1 text-sm text-blue-100">От A1 до C2 · маленькие шаги каждый день</p></div>
         <div className="flex gap-3"><div className="rounded-2xl bg-white/15 px-4 py-3 text-center"><div className="text-xl font-extrabold">{totalXp}</div><div className="text-xs">⭐ XP</div></div><div className="rounded-2xl bg-white/15 px-4 py-3 text-center"><div className="text-xl font-extrabold">{studiedDays}</div><div className="text-xs">📅 дней</div></div></div>
+        <nav aria-label="Курсы и аккаунт" className="flex flex-wrap gap-2">
+          <Link href="/courses" className="rounded-xl bg-white px-4 py-2 font-semibold text-blue-800">
+            Курсы A1–C2
+          </Link>
+          <Link href="/dashboard" className="rounded-xl bg-blue-950 px-4 py-2 font-semibold text-white">
+            Личный кабинет
+          </Link>
+          <Link href="/login" className="rounded-xl bg-blue-950 px-4 py-2 font-semibold text-white">
+            Войти
+          </Link>
+        </nav>
       </header>
       <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
         <nav className="flex flex-wrap content-start gap-2 lg:flex-col" aria-label="Разделы обучения">
-          {nav.map(item=><button key={item.id} onClick={()=>setTab(item.id)} className={`rounded-2xl px-4 py-3 text-left text-sm font-bold transition ${tab===item.id?"bg-blue-700 text-white shadow-md":"border border-blue-100 bg-white text-blue-900 hover:bg-blue-100"}`}>{item.emoji} {item.title}</button>)}
+          {nav.map(item=><a key={item.id} href={`#${item.id}`} aria-current={tab===item.id?"location":undefined} className={`rounded-2xl px-4 py-3 text-left text-sm font-bold transition ${tab===item.id?"bg-blue-700 text-white shadow-md":"border border-blue-100 bg-white text-blue-900 hover:bg-blue-100"}`}>{item.emoji} {item.title}</a>)}
         </nav>
         <div className="min-w-0 space-y-5">
           {tab==="today"&&<>

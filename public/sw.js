@@ -1,5 +1,70 @@
-const VERSION="my-english-offline-v4";
-const CORE=["/","/manifest.json","/icon-192.png","/icon-512.png"];
-self.addEventListener("install",event=>{event.waitUntil((async()=>{const cache=await caches.open(VERSION);await Promise.all(CORE.map(async url=>{try{await cache.add(url)}catch(e){console.warn("Cache:",url,e)}}));await self.skipWaiting()})())});
-self.addEventListener("activate",event=>{event.waitUntil((async()=>{const keys=await caches.keys();await Promise.all(keys.filter(k=>k.startsWith("my-english-offline-")&&k!==VERSION).map(k=>caches.delete(k)));await self.clients.claim()})())});
-self.addEventListener("fetch",event=>{const req=event.request;if(req.method!=="GET")return;const url=new URL(req.url);if(url.origin!==self.location.origin)return;if(req.mode==="navigate"){event.respondWith((async()=>{const cache=await caches.open(VERSION);try{const response=await fetch(req);if(response.ok)await cache.put("/",response.clone());return response}catch{return(await cache.match("/"))||Response.error()}})());return}if(url.pathname.startsWith("/_next/static/")||["/manifest.json","/icon-192.png","/icon-512.png"].includes(url.pathname)){event.respondWith((async()=>{const cache=await caches.open(VERSION);const saved=await cache.match(req);if(saved)return saved;try{const response=await fetch(req);if(response.ok)await cache.put(req,response.clone());return response}catch{return Response.error()}})())}});
+const CACHE_PREFIX = "my-english-offline-";
+const CACHE_NAME = `${CACHE_PREFIX}v5`;
+const PUBLIC_ASSETS = ["/manifest.json", "/icon-192.png", "/icon-512.png"];
+const OFFLINE_MESSAGE = "Эта страница недоступна без интернета. Открой My English онлайн и попробуй снова.";
+
+self.addEventListener("install", (event) => {
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    await Promise.allSettled(["/", ...PUBLIC_ASSETS].map((url) => cache.add(url)));
+    await self.skipWaiting();
+  })());
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil((async () => {
+    const names = await caches.keys();
+    await Promise.all(
+      names
+        .filter((name) => name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME)
+        .map((name) => caches.delete(name)),
+    );
+    await self.clients.claim();
+  })());
+});
+
+async function fetchPage(request, cacheKey) {
+  const cache = cacheKey ? await caches.open(CACHE_NAME) : null;
+  let response;
+  try {
+    response = await fetch(request);
+  } catch {
+    const saved = cache && await cache.match(cacheKey);
+    return saved ?? new Response(OFFLINE_MESSAGE, {
+      status: 503,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+  if (cache && response.ok && !response.redirected) {
+    await cache.put(cacheKey, response.clone()).catch(() => {});
+  }
+  return response;
+}
+
+async function fetchAsset(request) {
+  const cache = await caches.open(CACHE_NAME);
+  const saved = await cache.match(request);
+  if (saved) return saved;
+
+  const response = await fetch(request);
+  if (response.ok) await cache.put(request, response.clone()).catch(() => {});
+  return response;
+}
+
+self.addEventListener("fetch", (event) => {
+  const { request } = event;
+  const url = new URL(request.url);
+  if (request.method !== "GET" || url.origin !== self.location.origin) return;
+
+  if (request.mode === "navigate") {
+    const isStudyPage = url.pathname === "/" ||
+      url.pathname === "/courses" ||
+      /^\/courses\/(a1|a2|b1|b2|c1|c2)\/?$/i.test(url.pathname);
+    event.respondWith(fetchPage(request, isStudyPage && !url.search ? url.pathname : null));
+    return;
+  }
+
+  if (url.pathname.startsWith("/_next/static/") || PUBLIC_ASSETS.includes(url.pathname)) {
+    event.respondWith(fetchAsset(request));
+  }
+});
